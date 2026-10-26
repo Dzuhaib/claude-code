@@ -1,0 +1,78 @@
+name: Security tooling
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  plugin-signing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
+
+      - name: Install signing dependency
+        run: python3 -m pip install --disable-pip-version-check --no-cache-dir -r scripts/requirements-signing.txt
+
+      - name: Test plugin signing
+        run: python3 scripts/test_plugin_signing.py
+
+      - name: Verify signed plugins
+        shell: bash
+        run: |
+          for signature in plugins/*/.claude-plugin/signature.json; do
+            if [ ! -e "$signature" ]; then
+              continue
+            fi
+            plugin="${signature%/.claude-plugin/signature.json}"
+            python3 scripts/plugin_signing.py verify "$plugin" --trusted-keys plugins/trusted-keys
+          done
+
+  hook-sandbox:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
+
+      - name: Test hook sandbox
+        run: python3 scripts/test_hook_sandbox.py
+
+  dependency-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
+
+      - name: Test dependency audit
+        run: python3 scripts/test_dependency_audit.py
+
+      - name: Audit dependency pins
+        run: python3 scripts/dependency_audit.py --root .
+
+  security-guidance-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
+
+      - name: Test secret redaction
+        run: python3 plugins/security-guidance/tests/test_redaction.py
+
+      - name: Test cost guard
+        run: python3 plugins/security-guidance/tests/test_cost_guard.py
