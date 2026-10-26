@@ -19,7 +19,9 @@ jobs:
           persist-credentials: false
 
       - name: Install Claude Code and TypeScript
-        run: npm install -g @anthropic-ai/claude-code typescript@5.9.3
+        run: npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" typescript@5.9.3
+        env:
+          CLAUDE_CODE_VERSION: "2.1.310"
 
       - name: Typecheck each mod's hooks and tests
         run: tsc -p mods/tsconfig.json

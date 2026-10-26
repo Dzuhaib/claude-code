@@ -22,10 +22,12 @@ import json
 import os
 import re
 import sys
+import threading
 import urllib.request
 from typing import Optional, Tuple, Dict, Any, List
 
 import extensibility
+import redaction
 import review_api
 from _base import debug_log, _record_usage, _PV, PROVENANCE_TAG  # noqa: F401
 from session_state import with_locked_state
@@ -56,6 +58,28 @@ _HAS_3P_PROVIDER_AT_LOAD = any(
 HAS_API_CREDENTIALS = bool(
     ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN or _HAS_3P_PROVIDER_AT_LOAD
 )
+
+
+def _max_api_calls():
+    try:
+        value = int(os.environ.get("SECURITY_REVIEW_MAX_API_CALLS", "4"))
+    except ValueError:
+        return 4
+    return max(0, value)
+
+
+_MAX_API_CALLS = _max_api_calls()
+_API_CALLS = 0
+_API_CALLS_LOCK = threading.Lock()
+
+
+def _reserve_api_call():
+    global _API_CALLS
+    with _API_CALLS_LOCK:
+        if _API_CALLS >= _MAX_API_CALLS:
+            return False
+        _API_CALLS += 1
+        return True
 
 # Model for security review. Default chosen for its precision profile on
 # interruptive review surfaces — false positives are the dominant uninstall
@@ -167,6 +191,7 @@ def _cap_files_for_prompt(files):
     out = []
     total = 0
     for fp, content in files:
+        content = redaction.redact_text(content)
         if len(content) > DIFF_PER_FILE_BYTES:
             _last_review_truncated_bytes += len(content) - DIFF_PER_FILE_BYTES
             content = content[:DIFF_PER_FILE_BYTES] + "\n... [truncated by security-guidance: file exceeds per-file byte cap]"
@@ -400,6 +425,11 @@ def _call_claude(prompt, output_schema, thinking_budget=10000, max_tokens=16000,
     """
     global _last_call_claude_http_error
     _last_call_claude_http_error = None
+
+    if not _reserve_api_call():
+        debug_log("security-guidance: API call budget exhausted")
+        _last_call_claude_http_error = -2
+        return None
 
     if _is_3p_provider():
         # On Bedrock/Vertex/Foundry/Mantle the api.anthropic.com path below

@@ -19,6 +19,7 @@ import os
 from typing import Any
 
 import extensibility
+import redaction
 
 # ---------------------------------------------------------------------------
 # Diff capping
@@ -40,6 +41,7 @@ def cap_diff_for_prompt(
     dropped = 0
     total = 0
     for fp, content in files:
+        content = redaction.redact_text(content)
         if len(content) > DIFF_PER_FILE_BYTES:
             dropped += len(content) - DIFF_PER_FILE_BYTES
             content = (
@@ -210,8 +212,8 @@ SURVIVED_SCHEMA = {
 def build_refute_prompt(candidates: list[dict[str, Any]], diff_text: str) -> str:
     return (
         "You previously flagged these candidate vulnerabilities:\n\n"
-        + json.dumps(candidates, indent=2)
-        + "\n\nDIFF:\n" + diff_text[:8000]
+        + json.dumps(redaction.redact_value(candidates), indent=2)
+        + "\n\nDIFF:\n" + redaction.redact_text(diff_text[:8000])
         + "\n\nNow adversarially try to DISPROVE each one. For each "
         "candidate, FIRST identify the attacker (who controls the "
         "input) and the victim (who is harmed). REFUTE if the only "

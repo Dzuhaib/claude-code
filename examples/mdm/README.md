@@ -18,6 +18,10 @@ All templates encode the same minimal example (`permissions.disableBypassPermiss
 | [`windows/Set-ClaudeCodePolicy.ps1`](./windows/Set-ClaudeCodePolicy.ps1) | Intune **Platform scripts**. Writes `managed-settings.json` to `C:\Program Files\ClaudeCode\`. |
 | [`windows/ClaudeCode.admx`](./windows/ClaudeCode.admx) + [`en-US/ClaudeCode.adml`](./windows/en-US/ClaudeCode.adml) | Group Policy or Intune **Import ADMX**. Writes `HKLM\SOFTWARE\Policies\ClaudeCode\Settings` (REG_SZ, single-line JSON). |
 
+## Hardened baseline
+
+The templates above deploy only the minimal `disableBypassPermissionsMode` setting. For a stricter deployment, start from [`../settings/settings-strict.json`](../settings/settings-strict.json) or [`../settings/settings-hipaa.json`](../settings/settings-hipaa.json) instead of the minimal JSON. Those files add managed-only permission rules and hooks, block web tools, and can require sandboxed Bash. Review and customize network allowlists, MCP servers, and login restrictions before deploying them to a fleet.
+
 ## Tips
 - Replace the placeholder `PayloadUUID` and `PayloadOrganization` values in the `.mobileconfig` with your own (`uuidgen`)
 - Before deploying to your fleet, test on a single machine and confirm `/status` lists the source under **Setting sources** — e.g. `Enterprise managed settings (plist)` on macOS or `Enterprise managed settings (HKLM)` on Windows

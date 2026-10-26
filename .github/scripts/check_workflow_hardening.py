@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Fail if a workflow job that calls Claude, or .github/egress-firewall.yaml, breaks a rule in CLAUDE.md,
-"Security hardening for GitHub Actions". Run from the repository root. A job calls Claude when it runs the
-Claude Code action, or when it or a local action it uses mentions ANTHROPIC_FEDERATION_RULE_ID.
+"Security hardening for GitHub Actions". Run from the repository root, or pass the repository root as
+the only argument. A job calls Claude when it runs the Claude Code action, or when it or a local action
+it uses mentions ANTHROPIC_FEDERATION_RULE_ID.
 """
 
 import json
+import os
 import pathlib
 import re
 import shlex
@@ -17,6 +19,8 @@ POLICY_PATH = pathlib.Path(".github/egress-firewall.yaml")
 SIGN_IN_MARKER = "anthropic_federation_rule_id"
 CLAUDE_ACTIONS = ("anthropics/claude-code-action", "anthropics/claude-code-base-action")
 HELP = 'See CLAUDE.md, "Security hardening for GitHub Actions".'
+PINNED_ACTION = re.compile(r"^[^@\s]+@[0-9a-fA-F]{40}$")
+PINNED_DOCKER_IMAGE = re.compile(r"^docker://[^@\s]+@sha256:[0-9a-fA-F]{64}$")
 # Claude Code runs auto mode only on claude-opus-4-6 and newer models. On an older model it
 # falls back to its default permission mode, with no safety review.
 AUTO_MODE_MIN_VERSION = (4, 6)
@@ -82,6 +86,62 @@ def load_local_action(uses: str):
 
 def steps_of(job: dict) -> list[dict]:
     return [step for step in job.get("steps") or [] if isinstance(step, dict)]
+
+
+def check_untrusted_actors(workflow: dict, file_name: str) -> list[str]:
+    """Reject a literal '*' in the Claude action's untrusted-actor inputs."""
+    errors = []
+    jobs = workflow.get("jobs") if isinstance(workflow, dict) else None
+    for job_id, job in (jobs or {}).items():
+        if not isinstance(job, dict):
+            continue
+        for index, step in enumerate(steps_of(job), start=1):
+            inputs = step.get("with") or {}
+            if not isinstance(inputs, dict):
+                continue
+            for input_name in ("allowed_non_write_users", "allowed_bots"):
+                value = str(inputs.get(input_name, "")).strip()
+                if value == "*":
+                    step_label = f"step '{step['name']}'" if "name" in step else f"step {index}"
+                    errors.append(
+                        f".github/workflows/{file_name}: job '{job_id}', {step_label} sets "
+                        f"'{input_name}: \"*\"'. Use an explicit list of trusted actors, "
+                        f"or leave it empty."
+                    )
+    return errors
+
+
+def check_action_pins(workflow: dict, file_name: str) -> list[str]:
+    """Require every remote action and Docker action to be immutable."""
+    errors = []
+
+    def check(uses, where: str):
+        text = str(uses or "").strip()
+        if not text or text.startswith("./"):
+            return
+        if text.startswith("docker://"):
+            if not PINNED_DOCKER_IMAGE.match(text):
+                errors.append(
+                    f"{where} uses '{text}', which is not pinned by digest. "
+                    f"Use docker://image@sha256:<64-hex-digest>."
+                )
+            return
+        if not PINNED_ACTION.match(text):
+            errors.append(
+                f"{where} uses '{text}', which is not pinned to a commit SHA. "
+                f"Use owner/repo@<40-hex-commit-sha> # <tag>."
+            )
+
+    jobs = workflow.get("jobs") if isinstance(workflow, dict) else None
+    for job_id, job in (jobs or {}).items():
+        if not isinstance(job, dict):
+            continue
+        where = f".github/workflows/{file_name}: job '{job_id}'"
+        check(job.get("uses"), where)
+        for index, step in enumerate(steps_of(job), start=1):
+            step_label = f"step '{step['name']}'" if "name" in step else f"step {index}"
+            check(step.get("uses"), f"{where}, {step_label}")
+    return errors
 
 
 def runs_claude_code_action(step: dict) -> bool:
@@ -186,6 +246,19 @@ def permission_mode_problem(step: dict, exempt: bool, inherited_env: dict) -> st
                     f"{where} is '{model}', which Claude Code does not run in auto mode: it "
                     "falls back to the default permission mode. Use claude-opus-4-6 or a newer model"
                 )
+    max_turns = flag_values(args, "--max-turns")
+    if not max_turns:
+        return "add '--max-turns' to 'claude_args' so the run has a cost limit"
+    for value in max_turns:
+        try:
+            turns = int(value)
+        except ValueError:
+            return f"'claude_args' has '--max-turns {value}'. Use a whole number from 1 to 50"
+        if not 1 <= turns <= 50:
+            return (
+                f"'claude_args' has '--max-turns {turns}'. "
+                "Use a whole number from 1 to 50"
+            )
     return None
 
 
@@ -232,6 +305,15 @@ def check_job(file_name: str, job_id: str, job: dict, workflow_env: dict) -> lis
     key = f"{file_name}:{job_id}"
     where = f".github/workflows/{file_name}: job '{job_id}'"
     errors = []
+    timeout_minutes = job.get("timeout-minutes")
+    if (
+        not isinstance(timeout_minutes, int)
+        or isinstance(timeout_minutes, bool)
+        or not 1 <= timeout_minutes <= 30
+    ):
+        errors.append(
+            f"{where} must set 'timeout-minutes' to a whole number from 1 to 30"
+        )
     runs_on = job.get("runs-on")
     if isinstance(runs_on, list) and len(runs_on) == 1:
         runs_on = runs_on[0]
@@ -310,12 +392,19 @@ def check_policy() -> list[str]:
 
 
 def main() -> int:
+    root = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
+    if not root.is_dir():
+        stop(f"{root} is not a directory. Pass the repository root, or run from it.")
+    os.chdir(root)
     if not WORKFLOW_DIR.is_dir():
         stop(f"{WORKFLOW_DIR} not found. Run this check from the repository root.")
     errors = []
     checked = 0
     for path in sorted([*WORKFLOW_DIR.glob("*.yml"), *WORKFLOW_DIR.glob("*.yaml")]):
         workflow = load_yaml(path)
+        if isinstance(workflow, dict):
+            errors.extend(check_action_pins(workflow, path.name))
+            errors.extend(check_untrusted_actors(workflow, path.name))
         jobs = workflow.get("jobs") if isinstance(workflow, dict) else None
         for job_id, job in (jobs or {}).items():
             if not isinstance(job, dict) or not job_calls_claude(job):
