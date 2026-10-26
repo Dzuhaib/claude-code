@@ -59,6 +59,17 @@ SG_DUAL_OR=on   # default off
 
 Runs two parallel review calls and unions the findings. Catches a few percentage points more vulnerabilities in our testing, at roughly 2× the API cost per review. Most users don't need it.
 
+### Cost and data guardrails
+
+| Variable | Default | What it does |
+|---|---|---|
+| `SECURITY_REVIEW_MAX_API_CALLS` | `4` | Maximum direct API calls per hook process; `0` blocks all calls |
+| `SG_AGENTIC_MAX_TURNS` | `18` | Maximum agent turns for the agentic commit reviewer |
+| `DIFF_PER_FILE_BYTES` | `80000` | Maximum diff bytes sent for one file |
+| `DIFF_TOTAL_BYTES` | `400000` | Maximum diff bytes sent for one review |
+
+High-confidence credentials in prompt text are replaced with `[REDACTED:<TYPE>]` before they are sent to the model. This covers the direct diff review, the agentic diff prompt, and refute candidates. It is best-effort: the agentic reviewer can still read files through `Read`, `Grep`, and `Glob`, so keep credentials out of the repository and out of `claude-security-guidance.md`.
+
 ## Org-specific policies
 
 Drop a `claude-security-guidance.md` in any of:

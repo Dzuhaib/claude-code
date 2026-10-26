@@ -60,6 +60,29 @@ plugin-name/
 └── README.md                # Plugin documentation
 ```
 
+## Plugin Integrity
+
+Plugin releases can be signed with an Ed25519 key. The signature covers every file in the plugin directory except `signature.json`, caches, and bytecode:
+
+```bash
+python3 -m pip install -r scripts/requirements-signing.txt
+python3 scripts/plugin_signing.py keygen --private-key release-private.pem --public-key release-public.pem
+python3 scripts/plugin_signing.py sign plugins/hookify --private-key release-private.pem
+python3 scripts/plugin_signing.py verify plugins/hookify --public-key release-public.pem
+```
+
+Keep the private key outside the repository. Publish the public key at `plugins/trusted-keys/<key_id>.pem` so CI can verify signatures with `--trusted-keys plugins/trusted-keys`. The `Security tooling` workflow checks any signatures that are present and fails if the plugin changed after signing.
+
+`scripts/hook_sandbox.py` runs a hook command with a scrubbed environment, a hard timeout, and an optional JSONL audit log. On Linux it can add network isolation through `bubblewrap` or `unshare`:
+
+```bash
+python3 scripts/hook_sandbox.py --timeout 60 --audit-log ~/.claude/security/hooks.jsonl -- python3 hook.py
+```
+
+Use `--allow-env NAME` for variables a hook genuinely needs, and `--isolate-network` on Linux. The sandbox does not make an untrusted hook safe by itself; review the hook source too.
+
+`scripts/dependency_audit.py` checks actions, Docker images, pip packages, and npm packages for mutable references. It does not replace a CVE scanner; `Dependency CVE scan` runs Trivy against the repository and the pinned Python signing dependency.
+
 ## Contributing
 
 When adding new plugins to this directory:
