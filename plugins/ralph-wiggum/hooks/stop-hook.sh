@@ -17,8 +17,19 @@ if [[ ! -f "$RALPH_STATE_FILE" ]]; then
   exit 0
 fi
 
+# A repository can contain this file. Only honor a state file created by the
+# setup command, never one committed or tracked by the repository.
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  if git ls-files --error-unmatch "$RALPH_STATE_FILE" >/dev/null 2>&1; then
+    echo "⚠️  Ralph loop: refusing tracked state file $RALPH_STATE_FILE" >&2
+    echo "   Start a loop with /ralph-loop instead of using a repository-provided file." >&2
+    exit 0
+  fi
+fi
+
 # Parse markdown frontmatter (YAML between ---) and extract values
 FRONTMATTER=$(sed -n '/^---$/,/^---$/{ /^---$/d; p; }' "$RALPH_STATE_FILE")
+ACTIVE=$(echo "$FRONTMATTER" | grep '^active:' | sed 's/active: *//')
 ITERATION=$(echo "$FRONTMATTER" | grep '^iteration:' | sed 's/iteration: *//')
 MAX_ITERATIONS=$(echo "$FRONTMATTER" | grep '^max_iterations:' | sed 's/max_iterations: *//')
 # Extract completion_promise and strip surrounding quotes if present
@@ -45,6 +56,22 @@ if [[ ! "$MAX_ITERATIONS" =~ ^[0-9]+$ ]]; then
   echo "   Ralph loop is stopping. Run /ralph-loop again to start fresh." >&2
   rm "$RALPH_STATE_FILE"
   exit 0
+fi
+
+if [[ "$ACTIVE" != "true" ]]; then
+  echo "⚠️  Ralph loop: State file is not active; allowing exit." >&2
+  exit 0
+fi
+
+# Bound runaway loops even when the state file asks for unlimited iterations.
+MAX_ITERATIONS_CAP=${RALPH_MAX_ITERATIONS_CAP:-1000}
+if [[ ! "$MAX_ITERATIONS_CAP" =~ ^[0-9]+$ ]] || [[ "$MAX_ITERATIONS_CAP" -lt 1 ]]; then
+  echo "⚠️  Ralph loop: RALPH_MAX_ITERATIONS_CAP must be a positive integer" >&2
+  exit 0
+fi
+if [[ "$MAX_ITERATIONS" -eq 0 ]] || [[ "$MAX_ITERATIONS" -gt "$MAX_ITERATIONS_CAP" ]]; then
+  echo "⚠️  Ralph loop: capping max_iterations at $MAX_ITERATIONS_CAP" >&2
+  MAX_ITERATIONS=$MAX_ITERATIONS_CAP
 fi
 
 # Check if max iterations reached
@@ -150,10 +177,12 @@ if [[ -z "$PROMPT_TEXT" ]]; then
 fi
 
 # Update iteration in frontmatter (portable across macOS and Linux)
-# Create temp file, then atomically replace
-TEMP_FILE="${RALPH_STATE_FILE}.tmp.$$"
+# Create a private temp file, then atomically replace.
+TEMP_FILE=$(mktemp "${RALPH_STATE_FILE}.tmp.XXXXXX")
+trap 'rm -f "$TEMP_FILE"' EXIT
 sed "s/^iteration: .*/iteration: $NEXT_ITERATION/" "$RALPH_STATE_FILE" > "$TEMP_FILE"
 mv "$TEMP_FILE" "$RALPH_STATE_FILE"
+trap - EXIT
 
 # Build system message with iteration count and completion promise info
 if [[ "$COMPLETION_PROMISE" != "null" ]] && [[ -n "$COMPLETION_PROMISE" ]]; then

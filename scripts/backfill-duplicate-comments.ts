@@ -14,6 +14,7 @@ interface GitHubIssue {
   user: { id: number };
   created_at: string;
   closed_at?: string;
+  pull_request?: unknown;
 }
 
 interface GitHubComment {
@@ -82,6 +83,7 @@ Usage:
 Environment Variables:
   GITHUB_TOKEN - GitHub personal access token with repo and actions permissions (required)
   DRY_RUN - Set to "false" to actually trigger workflows (default: true for safety)
+  DAYS_BACK - Only process issues created within this many days (default: 90)
   MAX_ISSUE_NUMBER - Only process issues with numbers less than this value (default: 4050)`);
   }
   console.log("[DEBUG] GitHub token found");
@@ -91,10 +93,17 @@ Environment Variables:
   const dryRun = process.env.DRY_RUN !== "false";
   const maxIssueNumber = parseInt(process.env.MAX_ISSUE_NUMBER || "4050", 10);
   const minIssueNumber = parseInt(process.env.MIN_ISSUE_NUMBER || "1", 10);
+  const daysBack = parseInt(process.env.DAYS_BACK || "90", 10);
+  if (!Number.isFinite(daysBack) || daysBack <= 0) {
+    throw new Error(`DAYS_BACK must be a positive integer, got: ${process.env.DAYS_BACK}`);
+  }
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - daysBack);
   
   console.log(`[DEBUG] Repository: ${owner}/${repo}`);
   console.log(`[DEBUG] Dry run mode: ${dryRun}`);
   console.log(`[DEBUG] Looking at issues between #${minIssueNumber} and #${maxIssueNumber}`);
+  console.log(`[DEBUG] Created on or after: ${cutoff.toISOString()} (${daysBack} days back)`);
 
   console.log(`[DEBUG] Fetching issues between #${minIssueNumber} and #${maxIssueNumber}...`);
   const allIssues: GitHubIssue[] = [];
@@ -109,9 +118,12 @@ Environment Variables:
     
     if (pageIssues.length === 0) break;
     
-    // Filter to only include issues within the specified range
+    // Filter to only include issues within the specified range and age.
     const filteredIssues = pageIssues.filter(issue => 
-      issue.number >= minIssueNumber && issue.number < maxIssueNumber
+      !issue.pull_request &&
+      issue.number >= minIssueNumber &&
+      issue.number < maxIssueNumber &&
+      new Date(issue.created_at) >= cutoff
     );
     allIssues.push(...filteredIssues);
     

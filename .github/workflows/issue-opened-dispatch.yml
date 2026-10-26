@@ -16,8 +16,6 @@ jobs:
       - name: Process new issue
         env:
           ISSUE_URL: ${{ github.event.issue.html_url }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
-          ISSUE_TITLE: ${{ github.event.issue.title }}
           TARGET_REPO: ${{ secrets.ISSUE_OPENED_DISPATCH_TARGET_REPO }}
           GH_TOKEN: ${{ secrets.ISSUE_OPENED_DISPATCH_TOKEN }}
         run: |

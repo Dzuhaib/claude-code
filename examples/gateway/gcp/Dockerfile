@@ -22,7 +22,7 @@ ARG CLAUDE_BINARY=./claude
 
 # distroless/cc provides glibc + libstdc++ (required by the Bun-compiled
 # native binary). The :nonroot tag runs as uid/gid 65532.
-FROM gcr.io/distroless/cc-debian12:nonroot
+FROM gcr.io/distroless/cc-debian12:nonroot@sha256:9dac0a79194e45a7da0158a9c6da57b217585af0786db3845d1f0ec1a0dd182f
 
 ARG CLAUDE_BINARY
 COPY --chmod=0755 ${CLAUDE_BINARY} /usr/local/bin/claude

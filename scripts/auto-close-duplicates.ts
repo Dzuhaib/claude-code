@@ -11,6 +11,7 @@ interface GitHubIssue {
   title: string;
   user: { id: number };
   created_at: string;
+  pull_request?: unknown;
 }
 
 interface GitHubComment {
@@ -128,9 +129,10 @@ async function autoCloseDuplicates(): Promise<void> {
     
     if (pageIssues.length === 0) break;
     
-    // Filter for issues created more than 3 days ago
+    // Filter for issues created more than 3 days ago. The /issues endpoint
+    // also returns pull requests, so exclude those explicitly.
     const oldEnoughIssues = pageIssues.filter(issue => 
-      new Date(issue.created_at) <= threeDaysAgo
+      !issue.pull_request && new Date(issue.created_at) <= threeDaysAgo
     );
     
     allIssues.push(...oldEnoughIssues);

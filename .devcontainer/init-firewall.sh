@@ -24,15 +24,23 @@ else
     echo "No Docker DNS rules to restore"
 fi
 
-# First allow DNS and localhost before any restrictions
-# Allow outbound DNS
-iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
-# Allow inbound DNS responses
-iptables -A INPUT -p udp --sport 53 -j ACCEPT
-# Allow outbound SSH
-iptables -A OUTPUT -p tcp --dport 22 -j ACCEPT
-# Allow inbound SSH responses
-iptables -A INPUT -p tcp --sport 22 -m state --state ESTABLISHED -j ACCEPT
+# Allow DNS only to the resolver(s) configured for this container. Do not
+# allow arbitrary port 53 or SSH egress: both are exfiltration paths.
+DNS_SERVERS=$(awk '/^nameserver[[:space:]]+/ {print $2}' /etc/resolv.conf | sort -u)
+if [ -z "$DNS_SERVERS" ]; then
+    echo "ERROR: No DNS resolver found in /etc/resolv.conf"
+    exit 1
+fi
+for dns in $DNS_SERVERS; do
+    case "$dns" in
+        *:*) continue ;;
+    esac
+    echo "Allowing DNS resolver $dns"
+    iptables -A OUTPUT -p udp -d "$dns" --dport 53 -j ACCEPT
+    iptables -A OUTPUT -p tcp -d "$dns" --dport 53 -j ACCEPT
+    iptables -A INPUT -p udp -s "$dns" --sport 53 -j ACCEPT
+    iptables -A INPUT -p tcp -s "$dns" --sport 53 -m state --state ESTABLISHED -j ACCEPT
+done
 # Allow localhost
 iptables -A INPUT -i lo -j ACCEPT
 iptables -A OUTPUT -o lo -j ACCEPT

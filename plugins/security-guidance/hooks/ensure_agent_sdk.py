@@ -18,6 +18,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -30,6 +31,9 @@ BUILT = 2            # venv created + SDK pip-installed this run
 BUILD_FAILED = 3     # venv create or pip install raised/timed out
 SKIP_WIN32 = 4       # Windows; consumer glob doesn't handle Lib/ layout
 SKIP_SENTINEL = 5    # another SessionStart is currently building
+
+DEFAULT_SDK_VERSION = "0.2.174"
+SDK_VERSION_RE = re.compile(r"^[0-9][0-9A-Za-z.+!_-]*$")
 
 
 def _sdk_on_syspath() -> bool:
@@ -126,9 +130,12 @@ def main() -> tuple[int, str, str]:
         # exposure the user would have running `pip install` themselves, so
         # we're not widening the supply-chain surface.
         err_phase = "pip"
+        sdk_version = os.environ.get("CLAUDE_AGENT_SDK_VERSION", DEFAULT_SDK_VERSION)
+        if not SDK_VERSION_RE.fullmatch(sdk_version):
+            raise ValueError("CLAUDE_AGENT_SDK_VERSION is not a valid version")
         subprocess.run(
             [str(venv_py), "-m", "pip", "install", "--quiet",
-             "--disable-pip-version-check", "claude-agent-sdk"],
+             "--disable-pip-version-check", f"claude-agent-sdk=={sdk_version}"],
             capture_output=True, timeout=120, check=True,
         )
         return BUILT, "", ""

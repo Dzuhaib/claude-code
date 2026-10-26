@@ -3,7 +3,7 @@
 name: Security check for workflows that call Claude
 
 on:
-  pull_request:
+  pull_request_target:
   push:
     branches: [main]
 
@@ -16,8 +16,31 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Checkout repository
+      - name: Checkout trusted base branch
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          path: base
+          persist-credentials: false
+
+      - name: Checkout pull request files
+        if: github.event_name == 'pull_request_target'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: pr
+          persist-credentials: false
 
       - name: Check security settings of workflows that call Claude
-        run: python3 .github/scripts/check_workflow_hardening.py
+        run: |
+          if [ "$EVENT_NAME" = "pull_request_target" ]; then
+            python3 base/.github/scripts/check_workflow_hardening.py pr
+          else
+            python3 base/.github/scripts/check_workflow_hardening.py base
+          fi
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+
+      - name: Test the workflow hardening checker
+        run: python3 base/.github/scripts/test_check_workflow_hardening.py

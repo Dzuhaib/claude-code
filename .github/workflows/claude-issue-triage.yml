@@ -25,18 +25,20 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
 
       - name: Run Claude Code for Issue Triage
         timeout-minutes: 5
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@925afb53776cf1a2b738c6bdbed37b4d4000ef13 # v1
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           CLAUDE_CODE_SCRIPT_CAPS: '{"edit-issue-labels.sh":2}'
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          allowed_non_write_users: "*"
+          allowed_non_write_users: ${{ vars.CLAUDE_ALLOWED_NON_WRITE_USERS }}
           prompt: "/triage-issue REPO: ${{ github.repository }} ISSUE_NUMBER: ${{ github.event.issue.number }} EVENT: ${{ github.event_name }}"
           # Authenticate to the Claude API via Workload Identity Federation
           # (the workflow's OIDC token is exchanged for a short-lived access
@@ -52,3 +54,4 @@ jobs:
             --permission-mode auto
             --disallowedTools "WebFetch,WebSearch,Write,Edit,MultiEdit,NotebookEdit"
             --model claude-opus-4-6
+            --max-turns 8

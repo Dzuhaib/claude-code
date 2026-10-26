@@ -57,8 +57,10 @@ Start a Ralph loop in your current session.
 ```
 
 **Options:**
-- `--max-iterations <n>` - Stop after N iterations (default: unlimited)
+- `--max-iterations <n>` - Stop after N iterations (default: unlimited, capped at 1000)
 - `--completion-promise <text>` - Phrase that signals completion
+
+The stop hook ignores `.claude/ralph-loop.local.md` when the file is tracked by Git, and caps runs at 1000 iterations by default. Set `RALPH_MAX_ITERATIONS_CAP` to change the cap.
 
 ### /cancel-ralph
 

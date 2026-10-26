@@ -13,6 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      REPO: ${{ github.repository }}
     steps:
       - run: |
           DIFF=$(gh pr diff "$PR_NUMBER" -R "$REPO" || true)
@@ -42,6 +44,3 @@ jobs:
           If this is a new flow, please make sure you actually need `allowed_non_write_users`. If you are editing an existing workflow, double check that you are not adding new Claude permissions which might lead to a vulnerability.
 
           See existing workflows in this repo for safe usage examples, or contact the AppSec team.'
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          REPO: ${{ github.repository }}
